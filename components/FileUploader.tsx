@@ -17,12 +17,27 @@ export const FileUploader: React.FC<FileUploaderProps> = ({ onFileSelect, select
     }
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      onFileSelect(e.dataTransfer.files[0]);
+    }
+  };
+
   return (
     <div className="w-full max-w-xl mx-auto">
       {!selectedFile ? (
         <div 
           onClick={() => inputRef.current?.click()}
-          className="border-2 border-dashed border-slate-200 rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer hover:border-[#00a3e0]/50 hover:bg-slate-50 transition-all group"
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          className="border-2 border-dashed border-slate-200 rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer hover:border-[#00a3e0]/50 hover:bg-slate-50 transition-all group relative"
         >
           <input
             type="file"

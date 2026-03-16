@@ -7,7 +7,7 @@ import { FileUploader } from './components/FileUploader.tsx';
 import { AnalysisView } from './components/AnalysisView.tsx';
 import { analyzeMedicalDocument } from './services/geminiService.ts';
 import { AnalysisState, User, MedicalAnalysis } from './types.ts';
-import { Loader2, AlertCircle, Sparkles, History, MapPin } from 'lucide-react';
+import { Loader2, AlertCircle, Sparkles, History, MapPin, ArrowRight } from 'lucide-react';
 import { createClerkSupabaseClient } from './lib/supabase.ts';
 
 const App: React.FC = () => {
@@ -21,6 +21,18 @@ const App: React.FC = () => {
   const isClerkLoaded = isAuthLoaded && (!userId || isUserLoaded);
 
   const [loadingTimeout, setLoadingTimeout] = useState(false);
+  const [envError, setEnvError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check for critical environment variables
+    const missing = [];
+    if (!process.env.GEMINI_API_KEY) missing.push('GEMINI_API_KEY');
+    if (!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY) missing.push('VITE_CLERK_PUBLISHABLE_KEY');
+    
+    if (missing.length > 0) {
+      setEnvError(`Missing critical configuration: ${missing.join(', ')}. Please check your environment variables.`);
+    }
+  }, []);
 
   useEffect(() => {
     if (isClerkLoaded) {
@@ -108,13 +120,15 @@ const App: React.FC = () => {
     }
 
     // Fallback to localStorage
-    const localHistory = localStorage.getItem(`history_${userId}`);
-    if (localHistory) {
-      try {
-        setHistory(JSON.parse(localHistory));
-      } catch (e) {
-        console.error('Failed to parse local history:', e);
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const localHistory = localStorage.getItem(`history_${userId}`);
+        if (localHistory) {
+          setHistory(JSON.parse(localHistory));
+        }
       }
+    } catch (e) {
+      console.warn('LocalStorage access failed:', e);
     }
   }, [getSafeToken]);
 
@@ -188,12 +202,14 @@ const App: React.FC = () => {
 
         // Always save to localStorage as a robust fallback
         try {
-          const localKey = `history_${user.id}`;
-          const currentLocal = JSON.parse(localStorage.getItem(localKey) || '[]');
-          const updatedLocal = [enriched, ...currentLocal].slice(0, 50); // Keep last 50
-          localStorage.setItem(localKey, JSON.stringify(updatedLocal));
-          if (!savedToSupabase) {
-            setHistory(updatedLocal);
+          if (typeof window !== 'undefined' && window.localStorage) {
+            const localKey = `history_${user.id}`;
+            const currentLocal = JSON.parse(localStorage.getItem(localKey) || '[]');
+            const updatedLocal = [enriched, ...currentLocal].slice(0, 50); // Keep last 50
+            localStorage.setItem(localKey, JSON.stringify(updatedLocal));
+            if (!savedToSupabase) {
+              setHistory(updatedLocal);
+            }
           }
         } catch (e) {
           console.error('Failed to save to localStorage:', e);
@@ -229,7 +245,19 @@ const App: React.FC = () => {
           </p>
         </div>
         
-        {loadingTimeout && (
+        {envError && (
+          <div className="mt-8 p-4 bg-red-500/10 border border-red-500/20 rounded-xl max-w-md text-center">
+            <div className="flex items-center justify-center text-red-400 mb-2">
+              <AlertCircle className="w-5 h-5 mr-2" />
+              <span className="font-bold">Configuration Error</span>
+            </div>
+            <p className="text-xs text-red-300/80 leading-relaxed">
+              {envError}
+            </p>
+          </div>
+        )}
+        
+        {loadingTimeout && !envError && (
           <div className="mt-12 p-8 bg-white/5 rounded-[2rem] border border-white/10 max-w-md text-center animate-in fade-in zoom-in duration-500">
             <AlertCircle className="w-8 h-8 text-amber-400 mx-auto mb-4" />
             <p className="text-slate-300 mb-6 leading-relaxed">

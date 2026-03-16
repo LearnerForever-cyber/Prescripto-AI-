@@ -183,6 +183,28 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({ analysis }) => {
           </div>
         </section>
       </div>
+
+      {/* Next Steps */}
+      {analysis.nextSteps && analysis.nextSteps.length > 0 && (
+        <section className="bg-[#0f2a43] text-white rounded-[2.5rem] p-8 shadow-xl shadow-slate-200">
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="w-10 h-10 bg-[#00a3e0] rounded-2xl flex items-center justify-center">
+              <Zap className="w-5 h-5 text-white" />
+            </div>
+            <h3 className="text-xl font-bold">Actionable Next Steps</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {analysis.nextSteps.map((step, i) => (
+              <div key={i} className="flex items-start space-x-3 p-4 bg-white/5 rounded-2xl border border-white/10">
+                <div className="w-6 h-6 bg-[#00a3e0]/20 text-[#00a3e0] rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                  {i + 1}
+                </div>
+                <p className="text-sm text-slate-300 leading-relaxed">{step}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 };

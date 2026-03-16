@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { ClerkProvider } from '@clerk/clerk-react';
+import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import App from './App.tsx';
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -31,9 +32,11 @@ if (rootElement) {
   } else {
     root.render(
       <React.StrictMode>
-        <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
-          <App />
-        </ClerkProvider>
+        <ErrorBoundary>
+          <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
+            <App />
+          </ClerkProvider>
+        </ErrorBoundary>
       </React.StrictMode>
     );
   }

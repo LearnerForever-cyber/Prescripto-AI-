@@ -70,9 +70,15 @@ export const analyzeMedicalDocument = async (
   mimeType: string,
   cityTier: string = 'Tier-1'
 ): Promise<MedicalAnalysis> => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  
+  if (!apiKey) {
+    throw new Error("Gemini API Key is missing. Please ensure GEMINI_API_KEY is set in your environment variables.");
+  }
+
   try {
     // CRITICAL: New instance before call ensures latest credentials
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
     
     const response = await ai.models.generateContent({
       model: 'gemini-3.1-pro-preview',
@@ -85,17 +91,23 @@ export const analyzeMedicalDocument = async (
             }
           },
           {
-            text: `Analyze this medical document. 
+            text: `Perform a high-precision OCR and medical analysis on this document. 
             Context: Patient is in a ${cityTier} city in India.
-            1. Determine Document Type (Prescription, Bill, Lab, Insurance Rejection).
-            2. Explain medical jargon in simple English.
-            3. If Prescription: Identify BRANDED medicines and suggest Jan Aushadhi (Generic) alternatives with estimated price difference in INR (₹).
-            4. If Bill: Benchmark costs against Indian averages for ${cityTier}. 
-               Standard surgery ranges for reference: Cataract ₹20k-40k, C-Section ₹60k-1L, Dialysis ₹2.5k-5k.
-            5. Flag any unusually high charges or unnecessary "miscellaneous" fees like excessive RMO charges or consumable overheads.
-            6. Recommend actionable next steps.
-            ALWAYS add a clear disclaimer: 'Consult your doctor before making changes to medication.'
-            Format output strictly as JSON.`
+            
+            Tasks:
+            1. Document Identification: Determine if this is a Prescription, Hospital Bill, Lab Report, or Insurance Document.
+            2. Jargon Decoding: Extract complex medical terms (handwritten or printed) and explain them in simple, non-medical English.
+            3. Prescription Analysis: If medicines are listed, identify BRANDED drugs. Suggest Jan Aushadhi (Generic) equivalents. Provide estimated price comparisons in INR (₹) based on current Indian market trends.
+            4. Bill Benchmarking: If it's a bill, compare costs against standard ${cityTier} averages. 
+               Reference benchmarks for ${cityTier}: 
+               - Consultation: ₹500-1500
+               - Room Rent (Private): ₹5k-12k/day
+               - C-Section: ₹60k-1.2L
+               - Cataract: ₹25k-50k
+            5. Anomaly Detection: Flag any hidden charges, excessive "service fees", or duplicate billing entries.
+            6. Action Plan: Provide 3-5 clear, actionable next steps for the patient.
+            
+            Constraint: ALWAYS include the medical disclaimer. Output must be valid JSON matching the schema.`
           }
         ]
       },
