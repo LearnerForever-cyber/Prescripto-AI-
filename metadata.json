@@ -1,0 +1,7 @@
+{
+  "name": "Prescriptio AI",
+  "description": "An AI-powered medical document explainer for Indian patients. Uses Gemini AI to simplify prescriptions and bills, with secure Supabase storage compliant with HIPAA, GDPR, and DPDP standards.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
