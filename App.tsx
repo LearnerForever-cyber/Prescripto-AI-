@@ -67,6 +67,7 @@ const App: React.FC = () => {
     error: null
   });
   const [history, setHistory] = useState<MedicalAnalysis[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
   const [view, setView] = useState<'scan' | 'history'>('scan');
 
   const getSafeToken = useCallback(async () => {
@@ -80,6 +81,7 @@ const App: React.FC = () => {
 
   const fetchHistory = useCallback(async (userId: string) => {
     try {
+      // Try Supabase first
       const token = await getSafeToken();
       const supabase = createClerkSupabaseClient(token);
       
@@ -89,20 +91,30 @@ const App: React.FC = () => {
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
       
-      if (error) {
-        console.error('Supabase fetch error:', error);
-        return;
-      }
-
-      if (data) {
+      if (!error && data) {
         setHistory(data.map(item => ({
           ...item.analysis_data,
           id: item.id,
           timestamp: new Date(item.created_at).getTime()
         })));
+        return;
+      }
+
+      if (error) {
+        console.warn('Supabase fetch error, falling back to localStorage:', error);
       }
     } catch (err) {
-      console.error('Failed to fetch history:', err);
+      console.warn('Failed to fetch from Supabase, falling back to localStorage:', err);
+    }
+
+    // Fallback to localStorage
+    const localHistory = localStorage.getItem(`history_${userId}`);
+    if (localHistory) {
+      try {
+        setHistory(JSON.parse(localHistory));
+      } catch (e) {
+        console.error('Failed to parse local history:', e);
+      }
     }
   }, [getSafeToken]);
 
@@ -151,7 +163,9 @@ const App: React.FC = () => {
       setState(prev => ({ ...prev, isAnalyzing: false, result: enriched }));
       
       if (user) {
+        setIsSaving(true);
         // Save to Supabase
+        let savedToSupabase = false;
         try {
           const token = await getSafeToken();
           const supabase = createClerkSupabaseClient(token);
@@ -165,11 +179,26 @@ const App: React.FC = () => {
           if (error) {
             console.error('Supabase insert error:', error);
           } else {
+            savedToSupabase = true;
             fetchHistory(user.id);
           }
         } catch (err) {
           console.error('Failed to save to Supabase:', err);
         }
+
+        // Always save to localStorage as a robust fallback
+        try {
+          const localKey = `history_${user.id}`;
+          const currentLocal = JSON.parse(localStorage.getItem(localKey) || '[]');
+          const updatedLocal = [enriched, ...currentLocal].slice(0, 50); // Keep last 50
+          localStorage.setItem(localKey, JSON.stringify(updatedLocal));
+          if (!savedToSupabase) {
+            setHistory(updatedLocal);
+          }
+        } catch (e) {
+          console.error('Failed to save to localStorage:', e);
+        }
+        setIsSaving(false);
       }
     } catch (err) {
       console.error('Analysis Error:', err);
@@ -387,12 +416,20 @@ const App: React.FC = () => {
             </div>
           ) : state.result ? (
             <div className="space-y-4">
-               <button 
-                onClick={() => setState(p => ({ ...p, result: null, file: null, preview: null }))}
-                className="no-print text-sm font-bold text-[#00a3e0] flex items-center space-x-1 hover:text-[#0092c9]"
-              >
-                <span>&larr; Analyze Another Document</span>
-              </button>
+              <div className="flex items-center justify-between mb-4">
+                <button 
+                  onClick={() => setState(p => ({ ...p, result: null, file: null, preview: null }))}
+                  className="no-print text-sm font-bold text-[#00a3e0] flex items-center space-x-1 hover:text-[#0092c9]"
+                >
+                  <span>&larr; Analyze Another Document</span>
+                </button>
+                {isSaving && (
+                  <div className="flex items-center text-[10px] font-bold text-slate-400 animate-pulse">
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    SAVING TO HISTORY...
+                  </div>
+                )}
+              </div>
               <AnalysisView analysis={state.result} />
               
               {/* Mobile History Quick Access */}
