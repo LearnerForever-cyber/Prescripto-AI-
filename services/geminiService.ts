@@ -1,125 +1,125 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { MedicalAnalysis } from "../types";
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 
-// The Gemini API key is provided by the platform in the environment
-const API_KEY = process.env.GEMINI_API_KEY || "";
+if (!GROQ_API_KEY) {
+  console.warn("Groq API key not configured");
+}
+
+type AnalysisMode = "basic" | "pro";
 
 export const analyzeMedicalDocument = async (
   extractedText: string,
-  mode: "basic" | "pro"
-): Promise<MedicalAnalysis> => {
-  if (!API_KEY) {
-    throw new Error("Gemini API key is not configured.");
-  }
-
-  const ai = new GoogleGenAI({ apiKey: API_KEY });
-
-  const schema = {
-    type: Type.OBJECT,
-    properties: {
-      documentType: {
-        type: Type.STRING,
-        description: "The type of document: PRESCRIPTION, HOSPITAL_BILL, LAB_REPORT, or INSURANCE_REJECTION",
-      },
-      summary: {
-        type: Type.STRING,
-        description: "A brief, simple summary of the document findings.",
-      },
-      simplifiedTerms: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            jargon: { type: Type.STRING, description: "The medical term or jargon found." },
-            meaning: { type: Type.STRING, description: "A simple, easy-to-understand explanation." },
-            importance: { type: Type.STRING, description: "Why this matters to the patient." },
-          },
-          required: ["jargon", "meaning", "importance"],
-        },
-      },
-      criticalFindings: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            issue: { type: Type.STRING, description: "The specific issue or finding." },
-            description: { type: Type.STRING, description: "A detailed explanation of the finding." },
-            action: { type: Type.STRING, description: "Recommended action for the patient." },
-          },
-          required: ["issue", "description", "action"],
-        },
-      },
-      genericAlternatives: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            brandedName: { type: Type.STRING },
-            genericName: { type: Type.STRING },
-            approxBrandedPrice: { type: Type.STRING },
-            approxGenericPrice: { type: Type.STRING },
-            savingsPercentage: { type: Type.STRING },
-          },
-          required: ["brandedName", "genericName", "approxBrandedPrice", "approxGenericPrice", "savingsPercentage"],
-        },
-      },
-      costInsights: {
-        type: Type.OBJECT,
-        properties: {
-          procedureName: { type: Type.STRING },
-          billedAmount: { type: Type.STRING },
-          expectedRange: {
-            type: Type.OBJECT,
-            properties: {
-              privateLow: { type: Type.STRING },
-              privateHigh: { type: Type.STRING },
-              government: { type: Type.STRING },
-            },
-            required: ["privateLow", "privateHigh", "government"],
-          },
-          isOvercharged: { type: Type.BOOLEAN },
-          tierComparison: { type: Type.STRING },
-        },
-        required: ["procedureName", "billedAmount", "expectedRange", "isOvercharged", "tierComparison"],
-      },
-      nextSteps: {
-        type: Type.ARRAY,
-        items: { type: Type.STRING },
-        description: "A list of clear, actionable next steps for the patient.",
-      },
-    },
-    required: ["documentType", "summary", "simplifiedTerms", "criticalFindings", "nextSteps"],
-  };
-
-  const systemInstruction = `You are an expert medical document analyst for the Indian healthcare system.
-Your goal is to simplify medical documents (prescriptions, bills, lab reports) for patients.
-Explain jargon simply, identify potential overcharging in bills, and suggest generic medicine alternatives where applicable.
-Always use the ₹ (Rupee) symbol for costs.
-Be empathetic but professional.
-If the document is a bill, provide cost insights based on typical Indian hospital rates.
-If it's a prescription, provide generic alternatives for branded medicines.
-Return the analysis in the specified JSON format.`;
-
+  mode: AnalysisMode = "basic"
+) => {
   try {
-    const response = await ai.models.generateContent({
-      model: mode === "pro" ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview",
-      contents: `Analyze the following medical text extracted from a document: \n\n${extractedText}`,
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: schema,
-        temperature: 0.1,
+    const prompt = mode === "pro" ? getProPrompt(extractedText) : getBasicPrompt(extractedText);
+
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${GROQ_API_KEY}`,
       },
+      body: JSON.stringify({
+        model: "llama3-70b-8192", // fast + powerful
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a highly accurate medical assistant that explains prescriptions clearly in simple English. Never hallucinate unknown medicines.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0.3,
+      }),
     });
 
-    if (!response.text) {
-      throw new Error("No response from Gemini API.");
+    if (!response.ok) {
+      throw new Error("Groq API request failed");
     }
 
-    const result = JSON.parse(response.text) as MedicalAnalysis;
-    return result;
+    const data = await response.json();
+
+    const content = data.choices?.[0]?.message?.content;
+
+    if (!content) {
+      throw new Error("Empty response from AI");
+    }
+
+    // Try parsing structured JSON
+    let parsed;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      // fallback if model returns text
+      parsed = fallbackParser(content);
+    }
+
+    return parsed;
   } catch (error) {
-    console.error("Gemini Service Error:", error);
-    throw new Error(error instanceof Error ? error.message : "AI analysis failed. Please try again.");
+    console.error("Groq Analysis Error:", error);
+    throw new Error("Failed to analyze document. Please try again.");
   }
+};
+
+
+// ------------------ PROMPTS ------------------
+
+const getBasicPrompt = (text: string) => `
+Analyze this medical prescription or document.
+
+Return ONLY valid JSON in this format:
+
+{
+  "documentType": "prescription | lab_report | bill | other",
+  "summary": "short simple summary",
+  "medicines": [
+    {
+      "name": "medicine name",
+      "purpose": "why it is used",
+      "dosage": "how to take"
+    }
+  ]
+}
+
+Text:
+${text}
+`;
+
+const getProPrompt = (text: string) => `
+Analyze this medical document deeply.
+
+Return ONLY valid JSON:
+
+{
+  "documentType": "prescription | lab_report | bill | other",
+  "summary": "clear explanation",
+  "medicines": [
+    {
+      "name": "medicine",
+      "purpose": "use",
+      "dosage": "instructions",
+      "sideEffects": "common side effects"
+    }
+  ],
+  "precautions": ["list of precautions"],
+  "estimatedCost": "approx cost insight",
+  "severity": "low | medium | high"
+}
+
+Text:
+${text}
+`;
+
+
+// ------------------ FALLBACK PARSER ------------------
+
+const fallbackParser = (text: string) => {
+  return {
+    documentType: "other",
+    summary: text.slice(0, 200),
+    medicines: [],
+  };
 };
