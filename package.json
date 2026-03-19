@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "tsx server.ts",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
@@ -14,14 +14,18 @@
     "@google/genai": "1.41.0",
     "@supabase/supabase-js": "^2.99.0",
     "@tailwindcss/vite": "^4.2.1",
+    "@types/express": "^5.0.6",
     "clsx": "^2.1.1",
+    "express": "^5.2.1",
     "framer-motion": "^12.38.0",
     "lucide-react": "0.474.0",
     "razorpay": "^2.9.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "tailwind-merge": "^3.5.0",
-    "tailwindcss": "^4.2.1"
+    "tailwindcss": "^4.2.1",
+    "tesseract.js": "^7.0.0",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -16,7 +16,13 @@ export const handler: Handler = async (event: HandlerEvent) => {
       creditsToAdd
     } = JSON.parse(event.body);
 
-    const secret = process.env.RAZORPAY_KEY_SECRET!;
+    const secret = process.env.RAZORPAY_KEY_SECRET;
+    if (!secret) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'RAZORPAY_KEY_SECRET is required' }),
+      };
+    }
     const generated_signature = crypto
       .createHmac('sha256', secret)
       .update(razorpay_order_id + '|' + razorpay_payment_id)

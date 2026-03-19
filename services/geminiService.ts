@@ -1,189 +1,125 @@
-// services/geminiService.ts
+import { GoogleGenAI, Type } from "@google/genai";
+import { MedicalAnalysis } from "../types";
 
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+// The Gemini API key is provided by the platform in the environment
+const API_KEY = process.env.GEMINI_API_KEY || "";
 
-// --------------------
-// 🔹 PROMPTS
-// --------------------
-
-const BASIC_PROMPT = `
-You are a medical assistant AI.
-
-Analyze the prescription and explain it simply.
-
-Return JSON:
-{
-  "summary": "",
-  "medicines": [
-    {
-      "name": "",
-      "purpose": "",
-      "dosage": ""
-    }
-  ],
-  "investigations": [],
-  "notes": []
-}
-
-Rules:
-- Keep it simple
-- Do not guess unclear text
-`;
-
-const PRO_PROMPT = `
-You are an advanced medical AI focused on saving money and identifying risks.
-
-Analyze deeply.
-
-Return JSON:
-{
-  "summary": "",
-  "medicines": [
-    {
-      "name": "",
-      "purpose": "",
-      "dosage": "",
-      "estimatedCostINR": "",
-      "genericAlternative": "",
-      "costSavingPotential": ""
-    }
-  ],
-  "costAnalysis": {
-    "totalEstimatedCost": "",
-    "possibleSavings": "",
-    "insight": ""
-  },
-  "safetyWarnings": [],
-  "criticalFindings": [],
-  "nextSteps": []
-}
-
-Focus on:
-- cost savings
-- safety risks
-- better alternatives
-`;
-
-// --------------------
-// 🔹 UTIL: FILE → BASE64
-// --------------------
-
-async function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result.split(",")[1]); // remove prefix
-    };
-    reader.onerror = error => reject(error);
-  });
-}
-
-// --------------------
-// 🔁 RETRY LOGIC (Fix 429)
-// --------------------
-
-async function fetchWithRetry(
-  url: string,
-  options: RequestInit,
-  retries = 3,
-  delay = 2000
-): Promise<Response> {
-  try {
-    const res = await fetch(url, options);
-
-    if (res.status === 429 && retries > 0) {
-      console.warn(`429 hit. Retrying in ${delay}ms...`);
-      await new Promise(res => setTimeout(res, delay));
-      return fetchWithRetry(url, options, retries - 1, delay + 1000);
-    }
-
-    return res;
-  } catch (err) {
-    if (retries > 0) {
-      await new Promise(res => setTimeout(res, delay));
-      return fetchWithRetry(url, options, retries - 1, delay + 1000);
-    }
-    throw err;
-  }
-}
-
-// --------------------
-// 🧠 MAIN FUNCTION
-// --------------------
-
-export async function analyzeMedicalDocument(
-  file: File,
+export const analyzeMedicalDocument = async (
+  extractedText: string,
   mode: "basic" | "pro"
-) {
-  console.log("Analysis mode:", mode);
+): Promise<MedicalAnalysis> => {
+  if (!API_KEY) {
+    throw new Error("Gemini API key is not configured.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
+
+  const schema = {
+    type: Type.OBJECT,
+    properties: {
+      documentType: {
+        type: Type.STRING,
+        description: "The type of document: PRESCRIPTION, HOSPITAL_BILL, LAB_REPORT, or INSURANCE_REJECTION",
+      },
+      summary: {
+        type: Type.STRING,
+        description: "A brief, simple summary of the document findings.",
+      },
+      simplifiedTerms: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            jargon: { type: Type.STRING, description: "The medical term or jargon found." },
+            meaning: { type: Type.STRING, description: "A simple, easy-to-understand explanation." },
+            importance: { type: Type.STRING, description: "Why this matters to the patient." },
+          },
+          required: ["jargon", "meaning", "importance"],
+        },
+      },
+      criticalFindings: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            issue: { type: Type.STRING, description: "The specific issue or finding." },
+            description: { type: Type.STRING, description: "A detailed explanation of the finding." },
+            action: { type: Type.STRING, description: "Recommended action for the patient." },
+          },
+          required: ["issue", "description", "action"],
+        },
+      },
+      genericAlternatives: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            brandedName: { type: Type.STRING },
+            genericName: { type: Type.STRING },
+            approxBrandedPrice: { type: Type.STRING },
+            approxGenericPrice: { type: Type.STRING },
+            savingsPercentage: { type: Type.STRING },
+          },
+          required: ["brandedName", "genericName", "approxBrandedPrice", "approxGenericPrice", "savingsPercentage"],
+        },
+      },
+      costInsights: {
+        type: Type.OBJECT,
+        properties: {
+          procedureName: { type: Type.STRING },
+          billedAmount: { type: Type.STRING },
+          expectedRange: {
+            type: Type.OBJECT,
+            properties: {
+              privateLow: { type: Type.STRING },
+              privateHigh: { type: Type.STRING },
+              government: { type: Type.STRING },
+            },
+            required: ["privateLow", "privateHigh", "government"],
+          },
+          isOvercharged: { type: Type.BOOLEAN },
+          tierComparison: { type: Type.STRING },
+        },
+        required: ["procedureName", "billedAmount", "expectedRange", "isOvercharged", "tierComparison"],
+      },
+      nextSteps: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING },
+        description: "A list of clear, actionable next steps for the patient.",
+      },
+    },
+    required: ["documentType", "summary", "simplifiedTerms", "criticalFindings", "nextSteps"],
+  };
+
+  const systemInstruction = `You are an expert medical document analyst for the Indian healthcare system.
+Your goal is to simplify medical documents (prescriptions, bills, lab reports) for patients.
+Explain jargon simply, identify potential overcharging in bills, and suggest generic medicine alternatives where applicable.
+Always use the ₹ (Rupee) symbol for costs.
+Be empathetic but professional.
+If the document is a bill, provide cost insights based on typical Indian hospital rates.
+If it's a prescription, provide generic alternatives for branded medicines.
+Return the analysis in the specified JSON format.`;
 
   try {
-    const base64Image = await fileToBase64(file);
+    const response = await ai.models.generateContent({
+      model: mode === "pro" ? "gemini-3.1-pro-preview" : "gemini-3-flash-preview",
+      contents: `Analyze the following medical text extracted from a document: \n\n${extractedText}`,
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: schema,
+        temperature: 0.1,
+      },
+    });
 
-    const prompt = mode === "pro" ? PRO_PROMPT : BASIC_PROMPT;
-
-    // 🔥 Model selection (reduces 429)
-    const model =
-      mode === "pro"
-        ? "gemini-1.5-pro"
-        : "gemini-1.5-flash";
-
-    const response = await fetchWithRetry(
-      `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { text: prompt },
-                {
-                  inline_data: {
-                    mime_type: file.type,
-                    data: base64Image,
-                  },
-                },
-              ],
-            },
-          ],
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Gemini API Error: ${response.status} - ${errorText}`);
+    if (!response.text) {
+      throw new Error("No response from Gemini API.");
     }
 
-    const data = await response.json();
-
-    const text =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!text) {
-      throw new Error("Invalid response from Gemini");
-    }
-
-    // Try parsing JSON safely
-    try {
-      return JSON.parse(text);
-    } catch {
-      console.warn("Response not pure JSON, returning raw text");
-      return { raw: text };
-    }
-
+    const result = JSON.parse(response.text) as MedicalAnalysis;
+    return result;
   } catch (error) {
     console.error("Gemini Service Error:", error);
-
-    return {
-      error: true,
-      message: "Failed to analyze prescription. Please try again."
-    };
+    throw new Error(error instanceof Error ? error.message : "AI analysis failed. Please try again.");
   }
-}
+};

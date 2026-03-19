@@ -2,8 +2,9 @@ import React from 'react';
 import { 
   ShieldCheck, Zap, ArrowRight, CheckCircle2, 
   Upload, FileText, Lock, AlertCircle, 
-  Heart, ShieldAlert, Activity
+  Heart, ShieldAlert, Activity, IndianRupee
 } from 'lucide-react';
+import { CREDIT_PACKS } from '../constants';
 
 export const LandingPage: React.FC = () => {
   return (
@@ -237,6 +238,72 @@ export const LandingPage: React.FC = () => {
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing Section */}
+      <section id="pricing" className="py-32 bg-[#f8fafc]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-20">
+            <h2 className="text-4xl font-extrabold text-[#0f2a43] mb-4">Simple, Transparent Pricing</h2>
+            <p className="text-slate-500 max-w-2xl mx-auto">Buy credits and use them whenever you need. No monthly subscriptions, no hidden fees.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+            {CREDIT_PACKS.map((pack) => (
+              <div
+                key={pack.id}
+                className={`relative bg-white p-10 rounded-[3rem] border transition-all flex flex-col ${
+                  pack.id === 'popular' ? "border-[#00a3e0] shadow-2xl scale-105 z-10" : "border-slate-100 shadow-sm"
+                }`}
+              >
+                {pack.badge && (
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-[#00a3e0] text-white px-4 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">
+                    {pack.badge}
+                  </div>
+                )}
+                
+                <div className="text-center mb-10">
+                  <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mb-2">{pack.label}</p>
+                  <h3 className="text-2xl font-bold text-[#0f2a43] mb-6">{pack.name}</h3>
+                  <div className="flex items-center justify-center mb-2">
+                    <IndianRupee className="w-6 h-6 text-[#0f2a43]" />
+                    <span className="text-5xl font-black text-[#0f2a43]">{pack.price}</span>
+                  </div>
+                  <p className="text-[#00a3e0] font-bold text-sm">{pack.credits} Credits</p>
+                </div>
+
+                <div className="space-y-4 mb-10 flex-grow">
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-[10px] text-slate-400 font-bold mb-1 uppercase tracking-wider">Usage Estimate</p>
+                    <p className="text-sm font-bold text-[#0f2a43]">
+                      ≈ {pack.credits} Basic Scans <br />
+                      <span className="text-slate-300 font-normal">OR</span> {Math.floor(pack.credits / 3)} Pro Insights
+                    </p>
+                  </div>
+                  <ul className="space-y-4">
+                    {['Instant AI Analysis', 'Generic Medicine Finder', 'Cost Benchmarking'].map((feature, i) => (
+                      <li key={i} className="flex items-center text-sm text-slate-600">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500 mr-3" />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <button
+                  onClick={() => window.location.hash = '#signup'}
+                  className={`w-full py-4 rounded-2xl font-bold transition-all text-sm ${
+                    pack.id === 'popular' 
+                      ? "bg-[#00a3e0] text-white hover:bg-[#0092c9] shadow-lg shadow-[#00a3e0]/20" 
+                      : "bg-slate-100 text-[#0f2a43] hover:bg-slate-200"
+                  }`}
+                >
+                  Get Started
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       </section>

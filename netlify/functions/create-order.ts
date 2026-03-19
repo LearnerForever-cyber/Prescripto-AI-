@@ -9,9 +9,19 @@ export const handler: Handler = async (event: HandlerEvent) => {
   try {
     const { amount, currency = 'INR', receipt } = JSON.parse(event.body);
 
+    const key_id = process.env.RAZORPAY_KEY_ID;
+    const key_secret = process.env.RAZORPAY_KEY_SECRET;
+
+    if (!key_id || !key_secret) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({ error: 'RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are required' }),
+      };
+    }
+
     const razorpay = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID!,
-      key_secret: process.env.RAZORPAY_KEY_SECRET!,
+      key_id,
+      key_secret,
     });
 
     const options = {

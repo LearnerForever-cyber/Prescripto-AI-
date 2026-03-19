@@ -11,6 +11,7 @@ import { AnalysisModeToggle } from './components/AnalysisModeToggle.tsx';
 import { ProUpsell } from './components/ProUpsell.tsx';
 import { AdminDashboard } from './components/AdminDashboard.tsx';
 import { analyzeMedicalDocument } from './services/geminiService.ts';
+import { extractTextFromImage } from './lib/ocr.ts';
 import { getCredits, deductCredits } from './services/creditService.ts';
 import { AnalysisState, User, MedicalAnalysis } from './types.ts';
 import { Loader2, AlertCircle, Sparkles, History, MapPin, ArrowRight } from 'lucide-react';
@@ -182,8 +183,15 @@ const App: React.FC = () => {
 
     setState(prev => ({ ...prev, isAnalyzing: true, error: null }));
     try {
-      const base64Data = state.preview.split(',')[1];
-      const result = await analyzeMedicalDocument(base64Data, state.file.type, cityTier, analysisMode === 'pro');
+      // Step 1: Run OCR on file
+      const extractedText = await extractTextFromImage(state.file);
+      
+      if (!extractedText || extractedText.length < 10) {
+        throw new Error("Unable to read image. Please ensure the photo is clear and contains medical text.");
+      }
+
+      // Step 2: Send text to analyzeMedicalDocument()
+      const result = await analyzeMedicalDocument(extractedText, analysisMode);
       
       const enriched = { 
         ...result, 
@@ -253,10 +261,17 @@ const App: React.FC = () => {
 
     setState(prev => ({ ...prev, isAnalyzing: true, error: null }));
     try {
-      const base64Data = state.preview?.split(',')[1];
-      if (!base64Data || !state.file) throw new Error("No file data found");
+      if (!state.file) throw new Error("No file data found");
 
-      const result = await analyzeMedicalDocument(base64Data, state.file.type, cityTier, true);
+      // Step 1: Run OCR on file
+      const extractedText = await extractTextFromImage(state.file);
+      
+      if (!extractedText || extractedText.length < 10) {
+        throw new Error("Unable to read image. Please ensure the photo is clear and contains medical text.");
+      }
+
+      // Step 2: Send text to analyzeMedicalText()
+      const result = await analyzeMedicalText(extractedText, 'pro');
       
       const enriched = { 
         ...result, 
@@ -486,7 +501,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {isBuyModalOpen && (
+      {isBuyModalOpen && user && (
         <BuyCreditsModal 
           isOpen={isBuyModalOpen} 
           onClose={() => setIsBuyModalOpen(false)} 
@@ -495,6 +510,8 @@ const App: React.FC = () => {
             fetchUserCredits();
           }}
           userId={user.id}
+          userEmail={user.email}
+          userName={user.name}
         />
       )}
     </Layout>

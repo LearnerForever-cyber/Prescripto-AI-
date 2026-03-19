@@ -4,6 +4,8 @@ import { X, Check, IndianRupee, Loader2, Sparkles } from 'lucide-react';
 import { CREDIT_PACKS } from '../constants';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { processPayment } from '../services/paymentService';
+import { useAuth } from '@clerk/clerk-react';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -14,6 +16,8 @@ interface BuyCreditsModalProps {
   onClose: () => void;
   onSuccess: (newCredits: number) => void;
   userId: string;
+  userEmail: string;
+  userName: string;
 }
 
 declare global {
@@ -22,9 +26,10 @@ declare global {
   }
 }
 
-export const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, onSuccess, userId }) => {
+export const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, onSuccess, userId, userEmail, userName }) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const { getToken } = useAuth();
 
   const handlePayment = async (packId: string) => {
     const pack = CREDIT_PACKS.find(p => p.id === packId);
@@ -33,56 +38,17 @@ export const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClos
     setLoading(packId);
 
     try {
-      // 1. Create Order
-      const orderRes = await fetch('/.netlify/functions/create-order', {
-        method: 'POST',
-        body: JSON.stringify({
-          amount: pack.price,
-          receipt: `receipt_${Date.now()}`,
-        }),
-      });
-      const order = await orderRes.json();
-
-      // 2. Open Razorpay
-      const options = {
-        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
-        amount: order.amount,
-        currency: order.currency,
-        name: 'Prescription IQ',
-        description: `Purchase ${pack.credits} Credits`,
-        order_id: order.id,
-        handler: async (response: { razorpay_payment_id: string; razorpay_order_id: string; razorpay_signature: string }) => {
-          // 3. Verify Payment
-          const verifyRes = await fetch('/.netlify/functions/verify-payment', {
-            method: 'POST',
-            body: JSON.stringify({
-              ...response,
-              userId,
-              creditsToAdd: pack.credits
-            }),
-          });
-          const result = await verifyRes.json();
-          
-          if (result.success) {
-            setSuccess(true);
-            setTimeout(() => {
-              onSuccess(result.newCredits);
-              onClose();
-              setSuccess(false);
-            }, 2000);
-          }
-        },
-        prefill: {
-          name: '',
-          email: '',
-        },
-        theme: {
-          color: '#00a3e0',
-        },
-      };
-
-      const rzp = new window.Razorpay(options);
-      rzp.open();
+      const token = await getToken();
+      const result = await processPayment(userId, pack, userEmail, userName, token);
+      
+      if (result) {
+        setSuccess(true);
+        setTimeout(() => {
+          onSuccess(0);
+          onClose();
+          setSuccess(false);
+        }, 2000);
+      }
     } catch (error) {
       console.error('Payment failed:', error);
     } finally {
