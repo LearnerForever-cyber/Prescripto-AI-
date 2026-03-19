@@ -1,3 +1,4 @@
+
 export enum DocumentType {
   PRESCRIPTION = 'PRESCRIPTION',
   HOSPITAL_BILL = 'HOSPITAL_BILL',
@@ -25,7 +26,7 @@ export interface GenericAlternative {
   savingsPercentage: string;
 }
 
-export interface CostInsight {
+export interface CostInsights {
   procedureName: string;
   billedAmount: string;
   expectedRange: {
@@ -37,19 +38,15 @@ export interface CostInsight {
   tierComparison: string;
 }
 
-// Alias for backwards compatibility
-export type CostInsights = CostInsight;
-
 export interface MedicalAnalysis {
   id?: string;
   timestamp?: number;
-  isPro?: boolean;
   documentType: string;
   summary: string;
   simplifiedTerms: SimplifiedTerm[];
   criticalFindings: CriticalFinding[];
   genericAlternatives?: GenericAlternative[];
-  costInsights?: CostInsight;
+  costInsights?: CostInsights;
   nextSteps: string[];
 }
 

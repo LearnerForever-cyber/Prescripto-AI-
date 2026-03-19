@@ -10,10 +10,11 @@ function cn(...inputs: ClassValue[]) {
 }
 
 interface PricingPageProps {
-  onBuyClick: () => void;
+  onBuyCredits: (packId: string) => void;
+  onStartFree: () => void;
 }
 
-export const PricingPage: React.FC<PricingPageProps> = ({ onBuyClick }) => {
+export const PricingPage: React.FC<PricingPageProps> = ({ onBuyCredits, onStartFree }) => {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Hero Section */}
@@ -22,9 +23,9 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onBuyClick }) => {
           <div className="absolute top-0 left-0 w-96 h-96 bg-[#00a3e0] rounded-full filter blur-3xl -translate-x-1/2 -translate-y-1/2"></div>
           <div className="absolute bottom-0 right-0 w-96 h-96 bg-[#00a3e0] rounded-full filter blur-3xl translate-x-1/2 translate-y-1/2"></div>
         </div>
-
+        
         <div className="container mx-auto px-4 relative z-10 text-center">
-          <motion.h1
+          <motion.h1 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="text-4xl md:text-6xl font-bold mb-6 tracking-tight"
@@ -32,7 +33,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onBuyClick }) => {
             Understand Your Prescription.<br />
             <span className="text-[#00a3e0]">Save Money. Stay Safe.</span>
           </motion.h1>
-          <motion.p
+          <motion.p 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
@@ -44,10 +45,10 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onBuyClick }) => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            onClick={onBuyClick}
+            onClick={onStartFree}
             className="bg-[#00a3e0] hover:bg-[#0092c9] text-white px-8 py-4 rounded-2xl font-bold text-lg transition-all shadow-xl shadow-[#00a3e0]/20 flex items-center mx-auto space-x-2"
           >
-            <span>Buy Credits Now</span>
+            <span>Start with Free Credits</span>
             <ArrowRight className="w-5 h-5" />
           </motion.button>
         </div>
@@ -93,7 +94,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onBuyClick }) => {
                     {pack.badge}
                   </div>
                 )}
-
+                
                 <div className="text-center mb-8">
                   <p className="text-slate-500 font-bold uppercase tracking-widest text-xs mb-2">{pack.label}</p>
                   <h3 className="text-2xl font-bold text-[#0f2a43] mb-4">{pack.name}</h3>
@@ -129,11 +130,11 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onBuyClick }) => {
                 </div>
 
                 <button
-                  onClick={onBuyClick}
+                  onClick={() => onBuyCredits(pack.id)}
                   className={cn(
                     "w-full py-4 rounded-2xl font-bold transition-all",
-                    pack.id === 'popular'
-                      ? "bg-[#00a3e0] text-white hover:bg-[#0092c9] shadow-lg shadow-[#00a3e0]/20"
+                    pack.id === 'popular' 
+                      ? "bg-[#00a3e0] text-white hover:bg-[#0092c9] shadow-lg shadow-[#00a3e0]/20" 
                       : "bg-slate-100 text-[#0f2a43] hover:bg-slate-200"
                   )}
                 >
@@ -186,8 +187,34 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onBuyClick }) => {
         </div>
       </section>
 
+      {/* Pro Upsell */}
+      <section className="py-20 bg-slate-50">
+        <div className="container mx-auto px-4 max-w-4xl">
+          <div className="relative bg-[#0f2a43] rounded-[3rem] p-12 overflow-hidden text-center">
+            <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-[#00a3e0] via-transparent to-transparent"></div>
+            <div className="relative z-10">
+              <h2 className="text-3xl font-bold text-white mb-6">Unlock Deeper Insights</h2>
+              <div className="relative mb-8">
+                <div className="bg-white/5 backdrop-blur-md border border-white/10 p-8 rounded-3xl blur-[2px] select-none">
+                  <p className="text-slate-400 text-lg">💡 You could be overpaying by ₹200–₹500 on some prescriptions</p>
+                </div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="bg-[#00a3e0] text-white px-6 py-2 rounded-full font-bold shadow-xl">
+                    PRO INSIGHTS LOCKED
+                  </div>
+                </div>
+              </div>
+              <button className="bg-white text-[#0f2a43] px-8 py-4 rounded-2xl font-bold text-lg hover:bg-slate-100 transition-all flex items-center mx-auto space-x-2">
+                <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
+                <span>Unlock Pro Analysis (3 Credits)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Trust Signals */}
-      <section className="py-20 bg-white border-t border-slate-100">
+      <section className="py-20 bg-white">
         <div className="container mx-auto px-4">
           <div className="flex flex-wrap justify-center gap-12 text-slate-400 font-bold uppercase tracking-widest text-xs">
             <div className="flex items-center space-x-2">
@@ -199,7 +226,7 @@ export const PricingPage: React.FC<PricingPageProps> = ({ onBuyClick }) => {
             </div>
             <div className="flex items-center space-x-2">
               <Shield className="w-4 h-4" />
-              <span>Private &amp; Secure</span>
+              <span>Private & Secure</span>
             </div>
           </div>
         </div>

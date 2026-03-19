@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useUser, useAuth, useClerk, SignIn, SignUp } from '@clerk/clerk-react';
 import { Layout } from './components/Layout.tsx';
@@ -27,7 +28,10 @@ const App: React.FC = () => {
   const [userCredits, setUserCredits] = useState<{ credits: number; role: string } | null>(null);
   const [analysisMode, setAnalysisMode] = useState<'basic' | 'pro'>('basic');
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    // Environment check removed to reduce noise
+  }, []);
 
   const getSafeToken = useCallback(async () => {
     try {
@@ -56,6 +60,12 @@ const App: React.FC = () => {
     }
   }, [userId, clerkUser, fetchUserCredits]);
 
+  useEffect(() => {
+    if (isClerkLoaded) {
+      return;
+    }
+  }, [isClerkLoaded]);
+
   const user: User | null = useMemo(() => {
     if (!clerkUser) return null;
     const email = clerkUser.primaryEmailAddress?.emailAddress || '';
@@ -71,7 +81,7 @@ const App: React.FC = () => {
       role: isAdmin ? 'admin' : (userCredits?.role ?? 'user')
     };
   }, [clerkUser, userCredits]);
-
+  
   const [selectedCityTier, setSelectedCityTier] = useState<'Tier-1' | 'Tier-2' | 'Tier-3' | null>(null);
   const cityTier = selectedCityTier || user?.cityTier || 'Tier-1';
 
@@ -90,26 +100,26 @@ const App: React.FC = () => {
   }, []);
 
   const [state, setState] = useState<AnalysisState>({
-    file: null,
-    preview: null,
-    isAnalyzing: false,
-    result: null,
+    file: null, 
+    preview: null, 
+    isAnalyzing: false, 
+    result: null, 
     error: null
   });
   const [history, setHistory] = useState<MedicalAnalysis[]>([]);
   const [view, setView] = useState<'scan' | 'history' | 'pricing' | 'admin'>('scan');
 
-  const fetchHistory = useCallback(async (uid: string) => {
+  const fetchHistory = useCallback(async (userId: string) => {
     try {
       const token = await getSafeToken();
       const supabase = createClerkSupabaseClient(token);
-
+      
       const { data, error } = await supabase
         .from('scans')
         .select('*')
-        .eq('user_id', uid)
+        .eq('user_id', userId)
         .order('created_at', { ascending: false });
-
+      
       if (!error && data) {
         setHistory(data.map(item => ({
           ...item.analysis_data,
@@ -119,12 +129,12 @@ const App: React.FC = () => {
         return;
       }
     } catch (err) {
-      console.warn('Failed to fetch history from Supabase:', err);
+      console.warn('Failed to fetch history:', err);
     }
 
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        const localHistory = localStorage.getItem(`history_${uid}`);
+        const localHistory = localStorage.getItem(`history_${userId}`);
         if (localHistory) setHistory(JSON.parse(localHistory));
       }
     } catch (e) {
@@ -148,12 +158,12 @@ const App: React.FC = () => {
   const handleFileSelect = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
-      setState(prev => ({
-        ...prev,
-        file,
-        preview: reader.result as string,
-        error: null,
-        result: null
+      setState(prev => ({ 
+        ...prev, 
+        file, 
+        preview: reader.result as string, 
+        error: null, 
+        result: null 
       }));
       setView('scan');
     };
@@ -164,41 +174,46 @@ const App: React.FC = () => {
     if (!state.preview || !state.file || !user) return;
 
     const cost = ANALYSIS_COSTS[analysisMode.toUpperCase() as keyof typeof ANALYSIS_COSTS];
-
-    if (user.role !== 'admin' && (user.credits ?? 0) < cost) {
+    
+    // Check credits first (unless admin)
+    if (user.role !== 'admin' && user.credits < cost) {
       setIsBuyModalOpen(true);
       return;
     }
 
     setState(prev => ({ ...prev, isAnalyzing: true, error: null }));
     try {
-      const extractedText = await extractTextFromImage(state.file!);
-
+      // Step 1: Run OCR on file
+      const extractedText = await extractTextFromImage(state.file);
+      
       if (!extractedText || extractedText.length < 10) {
         throw new Error("Unable to read image. Please ensure the photo is clear and contains medical text.");
       }
 
+      // Step 2: Send text to analyzeMedicalDocument()
       const result = await analyzeMedicalDocument(extractedText, analysisMode);
-
-      const enriched: MedicalAnalysis = {
-        ...result,
-        id: Date.now().toString(),
+      
+      const enriched = { 
+        ...result, 
+        id: Date.now().toString(), 
         timestamp: Date.now(),
         isPro: analysisMode === 'pro'
       };
 
+      // Deduct credits
       const token = await getSafeToken();
       const newCredits = await deductCredits(user.id, cost, token);
-
+      
       if (newCredits === null) {
         setState(prev => ({ ...prev, isAnalyzing: false, error: "Insufficient credits. Please refill." }));
         setIsBuyModalOpen(true);
         return;
       }
-
+      
       setUserCredits(prev => prev ? { ...prev, credits: newCredits } : null);
-      setState(prev => ({ ...prev, isAnalyzing: false, result: enriched }));
 
+      setState(prev => ({ ...prev, isAnalyzing: false, result: enriched }));
+      
       setIsSaving(true);
       try {
         const supabase = createClerkSupabaseClient(token);
@@ -226,20 +241,20 @@ const App: React.FC = () => {
       setIsSaving(false);
     } catch (err) {
       console.error('Analysis Error:', err);
-      setState(prev => ({
-        ...prev,
-        isAnalyzing: false,
-        error: err instanceof Error ? err.message : "Analysis failed. Please try again."
+      setState(prev => ({ 
+        ...prev, 
+        isAnalyzing: false, 
+        error: err instanceof Error ? err.message : "Analysis failed. Please try again." 
       }));
     }
   };
 
   const handleUpgradeToPro = async () => {
     if (!state.result || !user) return;
-
+    
     const upgradeCost = ANALYSIS_COSTS.PRO - ANALYSIS_COSTS.BASIC;
-
-    if (user.role !== 'admin' && (user.credits ?? 0) < upgradeCost) {
+    
+    if (user.role !== 'admin' && user.credits < upgradeCost) {
       setIsBuyModalOpen(true);
       return;
     }
@@ -248,44 +263,44 @@ const App: React.FC = () => {
     try {
       if (!state.file) throw new Error("No file data found");
 
+      // Step 1: Run OCR on file
       const extractedText = await extractTextFromImage(state.file);
-
+      
       if (!extractedText || extractedText.length < 10) {
         throw new Error("Unable to read image. Please ensure the photo is clear and contains medical text.");
       }
 
+      // Step 2: Send text to analyzeMedicalDocument()
       const result = await analyzeMedicalDocument(extractedText, 'pro');
-
-      const enriched: MedicalAnalysis = {
-        ...result,
-        id: state.result.id,
+      
+      const enriched = { 
+        ...result, 
+        id: state.result.id, 
         timestamp: state.result.timestamp,
         isPro: true
       };
 
       const token = await getSafeToken();
       const newCredits = await deductCredits(user.id, upgradeCost, token);
-
+      
       if (newCredits === null) {
         setState(prev => ({ ...prev, isAnalyzing: false, error: "Insufficient credits for upgrade." }));
         setIsBuyModalOpen(true);
         return;
       }
-
+      
       setUserCredits(prev => prev ? { ...prev, credits: newCredits } : null);
+
       setState(prev => ({ ...prev, isAnalyzing: false, result: enriched }));
-
-      try {
-        const supabase = createClerkSupabaseClient(token);
-        await supabase.from('scans').update({
-          analysis_data: enriched,
-          is_pro: true
-        }).eq('id', state.result!.id);
-
-        fetchHistory(user.id);
-      } catch (err) {
-        console.error('Failed to update Supabase:', err);
-      }
+      
+      // Update in history
+      const supabase = createClerkSupabaseClient(token);
+      await supabase.from('scans').update({
+        analysis_data: enriched,
+        is_pro: true
+      }).eq('id', state.result.id);
+      
+      fetchHistory(user.id);
     } catch {
       setState(prev => ({ ...prev, isAnalyzing: false, error: "Upgrade failed. Please try again." }));
     }
@@ -319,10 +334,10 @@ const App: React.FC = () => {
 
   if (!user) {
     return (
-      <Layout
-        user={null}
-        onLogout={() => {}}
-        showLanding
+      <Layout 
+        user={null} 
+        onLogout={() => {}} 
+        showLanding 
         onPricingClick={() => setAuthView('login')}
       >
         <LandingPage />
@@ -331,9 +346,9 @@ const App: React.FC = () => {
   }
 
   return (
-    <Layout
-      user={user}
-      onLogout={handleLogout}
+    <Layout 
+      user={user} 
+      onLogout={handleLogout} 
       onLogoClick={() => { setState(p => ({ ...p, result: null, file: null, preview: null })); setView('scan'); }}
       onHistoryClick={() => setView('history')}
       onPricingClick={() => setView('pricing')}
@@ -348,9 +363,9 @@ const App: React.FC = () => {
           <aside className="lg:col-span-4 space-y-6 no-print hidden lg:block">
             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
               <h3 className="font-bold flex items-center mb-4 text-[#0f2a43]"><MapPin className="w-5 h-5 mr-2 text-[#00a3e0]" /> Healthcare Location</h3>
-              <select
-                value={cityTier}
-                onChange={(e) => setSelectedCityTier(e.target.value as 'Tier-1' | 'Tier-2' | 'Tier-3')}
+              <select 
+                value={cityTier} 
+                onChange={(e) => setSelectedCityTier(e.target.value as 'Tier-1' | 'Tier-2' | 'Tier-3')} 
                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#00a3e0] transition-all text-[#0f2a43]"
               >
                 <option value="Tier-1">Metro / Tier 1 (Mumbai, Delhi, BLR)</option>
@@ -358,14 +373,14 @@ const App: React.FC = () => {
                 <option value="Tier-3">Tier 3 / Smaller Towns</option>
               </select>
             </div>
-
+            
             <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
               <h3 className="font-bold flex items-center mb-4 text-[#0f2a43]"><History className="w-5 h-5 mr-2 text-[#00a3e0]" /> Recent Scans</h3>
               <div className="space-y-2 max-h-[400px] overflow-y-auto custom-scrollbar pr-1">
                 {history.map(h => (
-                  <button
-                    key={h.id}
-                    onClick={() => { setState(p => ({ ...p, result: h })); setView('scan'); }}
+                  <button 
+                    key={h.id} 
+                    onClick={() => { setState(p => ({ ...p, result: h })); setView('scan'); }} 
                     className={`w-full text-left p-4 rounded-2xl border transition-all ${state.result?.id === h.id ? 'bg-[#e0f2fe] border-[#00a3e0]/30' : 'bg-slate-50 border-transparent hover:border-slate-200'}`}
                   >
                     <p className="text-[10px] font-bold text-[#00a3e0] uppercase tracking-tighter">{h.documentType.replace('_', ' ')}</p>
@@ -380,13 +395,13 @@ const App: React.FC = () => {
 
           <main className="lg:col-span-8">
             <div className="lg:hidden flex p-1 bg-slate-100 rounded-2xl mb-6 no-print">
-              <button
+              <button 
                 onClick={() => setView('scan')}
                 className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${view === 'scan' ? 'bg-white text-[#0f2a43] shadow-sm' : 'text-slate-500'}`}
               >
                 New Scan
               </button>
-              <button
+              <button 
                 onClick={() => setView('history')}
                 className={`flex-1 py-3 rounded-xl text-sm font-bold transition-all ${view === 'history' ? 'bg-white text-[#0f2a43] shadow-sm' : 'text-slate-500'}`}
               >
@@ -397,14 +412,14 @@ const App: React.FC = () => {
             {view === 'history' ? (
               <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <h2 className="text-2xl font-bold text-[#0f2a43] mb-6 flex items-center">
-                  <History className="w-6 h-6 mr-2 text-[#00a3e0]" />
+                  <History className="w-6 h-6 mr-2 text-[#00a3e0]" /> 
                   Your Scan History
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {history.map(h => (
-                    <button
-                      key={h.id}
-                      onClick={() => { setState(p => ({ ...p, result: h })); setView('scan'); }}
+                    <button 
+                      key={h.id} 
+                      onClick={() => { setState(p => ({ ...p, result: h })); setView('scan'); }} 
                       className="text-left p-6 bg-white rounded-[2rem] border border-slate-100 shadow-sm hover:border-[#00a3e0]/30 transition-all group"
                     >
                       <div className="flex justify-between items-start mb-4">
@@ -433,7 +448,7 @@ const App: React.FC = () => {
             ) : state.result ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-between mb-4">
-                  <button
+                  <button 
                     onClick={() => setState(p => ({ ...p, result: null, file: null, preview: null }))}
                     className="no-print text-sm font-bold text-[#00a3e0] flex items-center space-x-1 hover:text-[#0092c9]"
                   >
@@ -441,9 +456,9 @@ const App: React.FC = () => {
                   </button>
                 </div>
                 <AnalysisView analysis={state.result} />
-
+                
                 {!state.result.isPro && (
-                  <ProUpsell onUpgrade={handleUpgradeToPro} isProcessing={state.isAnalyzing} />
+                  <ProUpsell onUpgrade={handleUpgradeToPro} />
                 )}
               </div>
             ) : (
@@ -453,19 +468,19 @@ const App: React.FC = () => {
                 </div>
                 <h2 className="text-3xl font-bold text-[#0f2a43] mb-4">Medical Document Explainer</h2>
                 <p className="text-slate-500 mb-10 max-w-md mx-auto">Upload a prescription, bill, or lab report to get a simplified explanation in plain English.</p>
-
-                <FileUploader
-                  onFileSelect={handleFileSelect}
-                  selectedFile={state.file}
-                  onClear={() => setState(p => ({ ...p, file: null, preview: null }))}
+                
+                <FileUploader 
+                  onFileSelect={handleFileSelect} 
+                  selectedFile={state.file} 
+                  onClear={() => setState(p => ({ ...p, file: null, preview: null }))} 
                 />
-
+                
                 {state.file && (
                   <div className="mt-8 space-y-6">
                     <AnalysisModeToggle mode={analysisMode} onChange={setAnalysisMode} />
-
-                    <button
-                      onClick={handleAnalyze}
+                    
+                    <button 
+                      onClick={handleAnalyze} 
                       className="w-full bg-[#0f2a43] text-white py-5 rounded-2xl font-bold text-lg hover:bg-slate-800 transition-all flex items-center justify-center space-x-3 shadow-xl shadow-slate-200 active:scale-[0.98]"
                     >
                       <Sparkles className="w-5 h-5" />
@@ -473,7 +488,7 @@ const App: React.FC = () => {
                     </button>
                   </div>
                 )}
-
+                
                 {state.error && (
                   <div className="mt-6 flex items-center justify-center space-x-2 text-red-400 bg-red-900/20 p-4 rounded-2xl border border-red-900/30">
                     <AlertCircle className="w-5 h-5" />
@@ -487,9 +502,9 @@ const App: React.FC = () => {
       )}
 
       {isBuyModalOpen && user && (
-        <BuyCreditsModal
-          isOpen={isBuyModalOpen}
-          onClose={() => setIsBuyModalOpen(false)}
+        <BuyCreditsModal 
+          isOpen={isBuyModalOpen} 
+          onClose={() => setIsBuyModalOpen(false)} 
           onSuccess={() => {
             setIsBuyModalOpen(false);
             fetchUserCredits();
