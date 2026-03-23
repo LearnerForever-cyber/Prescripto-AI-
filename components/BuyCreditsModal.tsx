@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Check, IndianRupee, Loader2, Sparkles } from 'lucide-react';
+import { X, Check, IndianRupee, Loader2, Sparkles, AlertCircle, FlaskConical } from 'lucide-react';
 import { CREDIT_PACKS } from '../constants';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -20,40 +20,54 @@ interface BuyCreditsModalProps {
   userName: string;
 }
 
-declare global {
-  interface Window {
-    Razorpay: new (options: Record<string, unknown>) => { open: () => void };
-  }
-}
-
-export const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, onSuccess, userId, userEmail, userName }) => {
+export const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({
+  isOpen,
+  onClose,
+  onSuccess,
+  userId,
+  userEmail,
+  userName,
+}) => {
   const [loading, setLoading] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { getToken } = useAuth();
 
   const handlePayment = async (packId: string) => {
-    const pack = CREDIT_PACKS.find(p => p.id === packId);
+    const pack = CREDIT_PACKS.find((p) => p.id === packId);
     if (!pack) return;
 
     setLoading(packId);
+    setError(null);
 
     try {
-      const token = await getToken();
+      const token = await getToken({ template: 'supabase' }).catch(() => getToken());
       const result = await processPayment(userId, pack, userEmail, userName, token);
-      
+
       if (result) {
         setSuccess(true);
+        // Close modal and refresh credits after 2s
         setTimeout(() => {
-          onSuccess(0);
+          onSuccess(0); // parent will re-fetch credits
           onClose();
           setSuccess(false);
         }, 2000);
+      } else {
+        // User dismissed modal — no error needed
+        setLoading(null);
       }
-    } catch (error) {
-      console.error('Payment failed:', error);
-    } finally {
+    } catch (err) {
+      console.error('Payment failed:', err);
+      setError(err instanceof Error ? err.message : 'Payment failed. Please try again.');
       setLoading(null);
     }
+  };
+
+  const handleClose = () => {
+    if (loading) return; // don't close while payment is processing
+    setError(null);
+    setSuccess(false);
+    onClose();
   };
 
   if (!isOpen) return null;
@@ -65,10 +79,10 @@ export const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClos
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={onClose}
+          onClick={handleClose}
           className="absolute inset-0 bg-[#0f2a43]/80 backdrop-blur-sm"
         />
-        
+
         <motion.div
           initial={{ opacity: 0, scale: 0.9, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -85,23 +99,48 @@ export const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClos
             </div>
           ) : (
             <>
+              {/* Header */}
               <div className="flex justify-between items-center p-8 border-b border-slate-100">
                 <div>
-                  <h2 className="text-2xl font-bold text-[#0f2a43]">Refill Credits</h2>
-                  <p className="text-sm text-slate-500">Choose a pack to continue your analysis</p>
+                  <div className="flex items-center space-x-2 mb-1">
+                    <h2 className="text-2xl font-bold text-[#0f2a43]">Refill Credits</h2>
+                    {/* Beta / test mode badge */}
+                    <span className="flex items-center space-x-1 px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-bold rounded-full uppercase tracking-wider">
+                      <FlaskConical className="w-3 h-3" />
+                      <span>Beta — Test Mode</span>
+                    </span>
+                  </div>
+                  <p className="text-sm text-slate-500">
+                    Use Razorpay test card: <span className="font-mono font-bold">4111 1111 1111 1111</span>, any future date, CVV <span className="font-mono font-bold">111</span>
+                  </p>
                 </div>
-                <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-all">
+                <button
+                  onClick={handleClose}
+                  disabled={!!loading}
+                  className="p-2 hover:bg-slate-100 rounded-full transition-all disabled:opacity-40"
+                >
                   <X className="w-6 h-6 text-slate-400" />
                 </button>
               </div>
 
+              {/* Error banner */}
+              {error && (
+                <div className="mx-8 mt-4 flex items-center space-x-2 p-4 bg-red-50 border border-red-100 rounded-2xl text-red-600 text-sm">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {/* Credit packs */}
               <div className="p-8 grid grid-cols-1 md:grid-cols-3 gap-6">
                 {CREDIT_PACKS.map((pack) => (
                   <div
                     key={pack.id}
                     className={cn(
-                      "relative p-6 rounded-3xl border transition-all flex flex-col",
-                      pack.id === 'popular' ? "border-[#00a3e0] bg-[#e0f2fe]/10" : "border-slate-100"
+                      'relative p-6 rounded-3xl border transition-all flex flex-col',
+                      pack.id === 'popular'
+                        ? 'border-[#00a3e0] bg-[#e0f2fe]/10'
+                        : 'border-slate-100'
                     )}
                   >
                     {pack.badge && (
@@ -109,9 +148,9 @@ export const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClos
                         {pack.badge}
                       </span>
                     )}
-                    <div className="mb-6">
+                    <div className="mb-4">
                       <h3 className="font-bold text-[#0f2a43] mb-1">{pack.name}</h3>
-                      <p className="text-xs text-slate-500">{pack.label}</p>
+                      <p className="text-xs text-slate-500">{pack.description}</p>
                     </div>
                     <div className="mb-6">
                       <div className="flex items-baseline">
@@ -125,10 +164,10 @@ export const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClos
                         disabled={!!loading}
                         onClick={() => handlePayment(pack.id)}
                         className={cn(
-                          "w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center space-x-2",
-                          pack.id === 'popular' 
-                            ? "bg-[#00a3e0] text-white hover:bg-[#0092c9]" 
-                            : "bg-slate-100 text-[#0f2a43] hover:bg-slate-200"
+                          'w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center space-x-2',
+                          pack.id === 'popular'
+                            ? 'bg-[#00a3e0] text-white hover:bg-[#0092c9] disabled:opacity-50'
+                            : 'bg-slate-100 text-[#0f2a43] hover:bg-slate-200 disabled:opacity-50'
                         )}
                       >
                         {loading === pack.id ? (
@@ -145,9 +184,10 @@ export const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClos
                 ))}
               </div>
 
-              <div className="p-8 bg-slate-50 border-t border-slate-100 text-center">
+              {/* Footer */}
+              <div className="px-8 pb-8 text-center">
                 <p className="text-xs text-slate-400">
-                  Secure payment via Razorpay. 1 Credit ≈ ₹2. Credits never expire.
+                  🔒 Secure payment via Razorpay · Credits never expire · 1 Credit ≈ ₹2
                 </p>
               </div>
             </>
