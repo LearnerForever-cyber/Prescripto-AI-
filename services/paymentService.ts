@@ -6,6 +6,27 @@ interface RazorpayResponse {
   razorpay_signature: string;
 }
 
+// Wait for Razorpay SDK to load from the script tag in index.html
+const waitForRazorpay = (): Promise<void> => {
+  return new Promise((resolve, reject) => {
+    if ((window as any).Razorpay) {
+      resolve();
+      return;
+    }
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      if ((window as any).Razorpay) {
+        clearInterval(interval);
+        resolve();
+      } else if (attempts > 20) {
+        clearInterval(interval);
+        reject(new Error('Razorpay SDK failed to load. Please disable any ad-blockers and try again.'));
+      }
+    }, 250);
+  });
+};
+
 export const processPayment = async (
   userId: string,
   pack: { id: string; price: number; credits: number; name: string },
@@ -16,12 +37,13 @@ export const processPayment = async (
   return new Promise((resolve, reject) => {
     const startPayment = async () => {
       try {
-        // 1. Create order on the server
-        const orderResponse = await fetch('/api/create-order', {
+        // Wait for Razorpay SDK
+        await waitForRazorpay();
+
+        // 1. Create order via Netlify function
+        const orderResponse = await fetch('/.netlify/functions/create-order', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             amount: pack.price,
             currency: 'INR',
@@ -30,64 +52,60 @@ export const processPayment = async (
         });
 
         if (!orderResponse.ok) {
-          throw new Error('Failed to create order');
+          const errText = await orderResponse.text();
+          console.error('Create order error:', errText);
+          throw new Error('Failed to create payment order. Please try again.');
         }
 
         const order = await orderResponse.json();
 
-        // 2. Initialize Razorpay Checkout
+        // 2. Open Razorpay checkout
         const options = {
+          // Use test key in beta — swap to live key for production
           key: import.meta.env.VITE_RAZORPAY_KEY_ID,
-          amount: order.amount,
+          amount: order.amount,           // already in paise from server
           currency: order.currency,
-          name: "Prescription AI",
-          description: `Purchase ${pack.credits} Credits - ${pack.name}`,
-          image: "https://picsum.photos/seed/prescription-ai/200/200",
+          name: 'Prescription AI',
+          description: `${pack.name} — ${pack.credits} Credits`,
+          image: '/manifest.json',        // fallback; replace with your logo URL
           order_id: order.id,
+          prefill: {
+            name: userName,
+            email: userEmail,
+          },
+          theme: {
+            color: '#00a3e0',
+          },
+          // Beta: show test mode banner
+          notes: {
+            mode: 'beta_test',
+            pack_id: pack.id,
+            user_id: userId,
+          },
           handler: async (response: RazorpayResponse) => {
             try {
-              // 3. Verify payment on the server
-              const verifyResponse = await fetch('/api/verify-payment', {
+              // 3. Verify payment via Netlify function
+              const verifyResponse = await fetch('/.netlify/functions/verify-payment', {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(response),
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                  userId,
+                  creditsToAdd: pack.credits,
+                }),
               });
+
+              if (!verifyResponse.ok) {
+                const errText = await verifyResponse.text();
+                console.error('Verify payment error:', errText);
+                throw new Error('Payment verification failed. Please contact support.');
+              }
 
               const verification = await verifyResponse.json();
 
-              if (verification.status === 'success') {
-                // 4. Update credits in Supabase
-                const supabase = createClerkSupabaseClient(token);
-                
-                // Get current credits
-                const { data: currentData } = await supabase
-                  .from('user_credits')
-                  .select('credits')
-                  .eq('user_id', userId)
-                  .single();
-                
-                const newCredits = (currentData?.credits || 0) + pack.credits;
-
-                // Update credits
-                const { error: updateError } = await supabase
-                  .from('user_credits')
-                  .update({ credits: newCredits })
-                  .eq('user_id', userId);
-
-                if (updateError) throw updateError;
-
-                // Record payment
-                await supabase.from('payments').insert({
-                  user_id: userId,
-                  amount: pack.price,
-                  credits: pack.credits,
-                  razorpay_order_id: response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  status: 'completed'
-                });
-
+              if (verification.success) {
                 resolve(true);
               } else {
                 resolve(false);
@@ -97,27 +115,28 @@ export const processPayment = async (
               reject(err);
             }
           },
-          prefill: {
-            name: userName,
-            email: userEmail,
-          },
-          theme: {
-            color: "#00a3e0",
+          modal: {
+            ondismiss: () => {
+              // User closed the modal without paying
+              resolve(false);
+            },
           },
         };
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const rzp = new (window as any).Razorpay(options);
-        rzp.on('payment.failed', function (response: { error: { description: string } }) {
-          console.error('Payment failed:', response.error.description);
-          resolve(false);
+
+        rzp.on('payment.failed', (response: { error: { description: string; reason: string } }) => {
+          console.error('Payment failed:', response.error);
+          reject(new Error(`Payment failed: ${response.error.description}`));
         });
+
         rzp.open();
       } catch (error) {
         console.error('Payment processing error:', error);
         reject(error);
       }
     };
+
     startPayment();
   });
 };
