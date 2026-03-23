@@ -192,15 +192,20 @@ const App: React.FC = () => {
       };
 
       const token = await getSafeToken();
-      const newCredits = await deductCredits(user.id, cost, token);
 
-      if (newCredits === null) {
-        setState((prev) => ({ ...prev, isAnalyzing: false, error: 'Insufficient credits. Please refill.' }));
-        setIsBuyModalOpen(true);
-        return;
+      // Admins bypass credit deduction entirely
+      if (user.role !== 'admin') {
+        const newCredits = await deductCredits(user.id, cost, token);
+
+        if (newCredits === null) {
+          setState((prev) => ({ ...prev, isAnalyzing: false, error: 'Insufficient credits. Please refill.' }));
+          setIsBuyModalOpen(true);
+          return;
+        }
+
+        setUserCredits((prev) => (prev ? { ...prev, credits: newCredits } : null));
       }
 
-      setUserCredits((prev) => (prev ? { ...prev, credits: newCredits } : null));
       setState((prev) => ({ ...prev, isAnalyzing: false, result: enriched }));
 
       setIsSaving(true);
@@ -262,15 +267,20 @@ const App: React.FC = () => {
       };
 
       const token = await getSafeToken();
-      const newCredits = await deductCredits(user.id, upgradeCost, token);
 
-      if (newCredits === null) {
-        setState((prev) => ({ ...prev, isAnalyzing: false, error: 'Insufficient credits for upgrade.' }));
-        setIsBuyModalOpen(true);
-        return;
+      // Admins bypass credit deduction entirely
+      if (user.role !== 'admin') {
+        const newCredits = await deductCredits(user.id, upgradeCost, token);
+
+        if (newCredits === null) {
+          setState((prev) => ({ ...prev, isAnalyzing: false, error: 'Insufficient credits for upgrade.' }));
+          setIsBuyModalOpen(true);
+          return;
+        }
+
+        setUserCredits((prev) => (prev ? { ...prev, credits: newCredits } : null));
       }
 
-      setUserCredits((prev) => (prev ? { ...prev, credits: newCredits } : null));
       setState((prev) => ({ ...prev, isAnalyzing: false, result: enriched }));
 
       const supabase = createClerkSupabaseClient(token);
