@@ -9,7 +9,6 @@ const CORS_HEADERS = {
 };
 
 export const handler: Handler = async (event: HandlerEvent) => {
-  // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: CORS_HEADERS, body: '' };
   }
@@ -23,10 +22,11 @@ export const handler: Handler = async (event: HandlerEvent) => {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!secret) {
+    console.error('RAZORPAY_KEY_SECRET missing');
     return {
       statusCode: 500,
       headers: CORS_HEADERS,
-      body: JSON.stringify({ error: 'RAZORPAY_KEY_SECRET is not configured' }),
+      body: JSON.stringify({ error: 'Payment service not configured.' }),
     };
   }
 
@@ -39,13 +39,14 @@ export const handler: Handler = async (event: HandlerEvent) => {
       creditsToAdd,
     } = JSON.parse(event.body || '{}');
 
-    // 1. Verify signature
+    // 1. Verify Razorpay signature
     const generated_signature = crypto
       .createHmac('sha256', secret)
       .update(`${razorpay_order_id}|${razorpay_payment_id}`)
       .digest('hex');
 
     if (generated_signature !== razorpay_signature) {
+      console.error('Signature mismatch');
       return {
         statusCode: 400,
         headers: CORS_HEADERS,
@@ -53,10 +54,11 @@ export const handler: Handler = async (event: HandlerEvent) => {
       };
     }
 
-    // 2. Update credits in Supabase using service role key
+    // 2. Update credits in Supabase
     if (supabaseUrl && serviceRoleKey && userId && creditsToAdd) {
       const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+      // Get current credits
       const { data: currentData, error: fetchError } = await supabase
         .from('user_credits')
         .select('credits')
@@ -65,11 +67,10 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
       if (fetchError && fetchError.code !== 'PGRST116') {
         console.error('Supabase fetch error:', fetchError);
-        throw fetchError;
+        throw new Error(fetchError.message);
       }
 
-      const currentCredits = currentData?.credits || 0;
-      const newCredits = currentCredits + creditsToAdd;
+      const newCredits = (currentData?.credits || 0) + creditsToAdd;
 
       const { error: updateError } = await supabase
         .from('user_credits')
@@ -80,17 +81,24 @@ export const handler: Handler = async (event: HandlerEvent) => {
         });
 
       if (updateError) {
-        console.error('Supabase update error:', updateError);
-        throw updateError;
+        console.error('Supabase upsert error:', updateError);
+        throw new Error(updateError.message);
       }
 
-      // Log the payment
+      // Log payment record
       await supabase.from('payments').insert({
         user_id: userId,
         razorpay_order_id,
         razorpay_payment_id,
         credits_added: creditsToAdd,
         status: 'success',
+      });
+    } else {
+      console.warn('Skipping Supabase update — missing env vars or params:', {
+        hasUrl: !!supabaseUrl,
+        hasKey: !!serviceRoleKey,
+        userId,
+        creditsToAdd,
       });
     }
 
@@ -104,7 +112,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
     return {
       statusCode: 500,
       headers: CORS_HEADERS,
-      body: JSON.stringify({ error: 'Payment verification failed' }),
+      body: JSON.stringify({ error: 'Payment verification failed. Please contact support.' }),
     };
   }
 };
