@@ -1,4 +1,3 @@
-import Razorpay from 'razorpay';
 import { Handler, HandlerEvent } from '@netlify/functions';
 
 const CORS_HEADERS = {
@@ -8,7 +7,6 @@ const CORS_HEADERS = {
 };
 
 export const handler: Handler = async (event: HandlerEvent) => {
-  // Handle preflight
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: CORS_HEADERS, body: '' };
   }
@@ -40,13 +38,32 @@ export const handler: Handler = async (event: HandlerEvent) => {
       };
     }
 
-    const razorpay = new Razorpay({ key_id, key_secret });
+    // Call Razorpay REST API directly — no SDK needed, works in any environment
+    const credentials = Buffer.from(`${key_id}:${key_secret}`).toString('base64');
 
-    const order = await razorpay.orders.create({
-      amount: Math.round(amount * 100), // convert INR to paise
-      currency,
-      receipt: receipt || `receipt_${Date.now()}`,
+    const razorpayRes = await fetch('https://api.razorpay.com/v1/orders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${credentials}`,
+      },
+      body: JSON.stringify({
+        amount: Math.round(amount * 100), // INR to paise
+        currency,
+        receipt: receipt || `receipt_${Date.now()}`,
+      }),
     });
+
+    const order = await razorpayRes.json();
+
+    if (!razorpayRes.ok) {
+      console.error('Razorpay API error:', order);
+      return {
+        statusCode: razorpayRes.status,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: order?.error?.description || 'Failed to create order' }),
+      };
+    }
 
     return {
       statusCode: 200,
